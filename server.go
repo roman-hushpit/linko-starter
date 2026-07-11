@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"boot.dev/linko/internal/logging"
 	"boot.dev/linko/internal/store"
 )
 
@@ -24,7 +25,7 @@ func newServer(store store.Store, port int, cancel context.CancelFunc, logger *s
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: requestLogger(logger)(mux),
+		Handler: logging.RequestLogger(logger)(mux),
 	}
 
 	s := &server{
@@ -73,14 +74,4 @@ func (s *server) handlerShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	go s.cancel()
-}
-
-func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-			logger.Info("Served request", slog.String("method", r.Method),
-				slog.String("path", r.URL.Path), slog.String("client_ip", r.RemoteAddr))
-		})
-	}
 }
