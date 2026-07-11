@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log/slog"
+	"errors"
 	"net/http"
 
 	"boot.dev/linko/internal/logging"
@@ -27,22 +27,21 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 		username, password, ok := r.BasicAuth()
 
 		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			logging.HttpError(w, pkgerr.WithStack(errors.New("unauthorized")), http.StatusUnauthorized, r.Context())
 			return
 		}
 		stored, exists := allowedUsers[username]
 		if !exists {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			logging.HttpError(w, pkgerr.WithStack(errors.New("unauthorized")), http.StatusUnauthorized, r.Context())
 			return
 		}
 		ok, err := s.validatePassword(password, stored)
 		if err != nil {
-			s.logger.Error("error validating password", slog.String("user", username), slog.Any("error", err))
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			logging.HttpError(w, pkgerr.WithStack(errors.New("internal server error")), http.StatusInternalServerError, r.Context())
 			return
 		}
 		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			logging.HttpError(w, pkgerr.WithStack(errors.New("Unauthorized")), http.StatusUnauthorized, r.Context())
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), UserContextKey, username))

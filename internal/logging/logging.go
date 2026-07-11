@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"boot.dev/linko/internal/linkoerr"
 )
 
 type contextKey string
@@ -14,6 +16,7 @@ const LogContextKey contextKey = "log_context"
 
 type LogContext struct {
 	Username string
+	Error error
 }
 
 type spyReadCloser struct {
@@ -74,8 +77,20 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			if logCtx.Username != "" {
 				attributes = append(attributes, slog.String("user", logCtx.Username))
 			}
-
+			if logCtx.Username != "" {
+				attributes = append(attributes, slog.String("user", logCtx.Username))
+			}
+			if logCtx.Error != nil {
+				attributes = append(attributes, slog.GroupAttrs("error", linkoerr.ErrorAttrs(logCtx.Error)...))
+			}
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "Served request", attributes...)
 		})
 	}
+}
+
+func HttpError( w http.ResponseWriter, err error, status int, ctx context.Context,) {
+	if logCtx, ok := ctx.Value(LogContextKey).(*LogContext); ok {
+		logCtx.Error = err
+	}
+	http.Error(w, err.Error(), status)
 }

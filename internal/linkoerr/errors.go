@@ -2,8 +2,21 @@ package linkoerr
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+
+	pkgerr "github.com/pkg/errors"
 )
+
+type StackTracer interface {
+	error
+	StackTrace() pkgerr.StackTrace
+}
+
+type MultiError interface {
+	error
+	Unwrap() []error
+}
 
 // argsToAttr turns a list of typed or untyped values into a slice of [slog.Attr].
 // args[i] is treated as a key if it is a string or an [slog.Attr]; otherwise, it
@@ -53,6 +66,20 @@ func (e *errWithAttrs) Attrs() []slog.Attr {
 
 type attrError interface {
 	Attrs() []slog.Attr
+}
+
+func ErrorAttrs(err error) []slog.Attr {
+	attrs := []slog.Attr{
+		{Key: "message", Value: slog.StringValue(err.Error())},
+	}
+	attrs = append(attrs, Attrs(err)...)
+	if stackErr, ok := errors.AsType[StackTracer](err); ok {
+		attrs = append(attrs, slog.Attr{
+			Key:   "stack_trace",
+			Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
+		})
+	}
+	return attrs
 }
 
 // Attrs recursively extracts all logging attributes from an error chain. In the
