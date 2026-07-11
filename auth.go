@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
-	pkgerr "github.com/pkg/errors"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
+
+	"boot.dev/linko/internal/logging"
+	pkgerr "github.com/pkg/errors"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type contextKey string
@@ -23,6 +25,7 @@ var allowedUsers = map[string]string{
 func (s *server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
+
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -43,6 +46,9 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), UserContextKey, username))
+		if logCtx, ok := r.Context().Value(logging.LogContextKey).(*logging.LogContext); ok {
+			logCtx.Username = username
+		}
 		next.ServeHTTP(w, r)
 	})
 }
