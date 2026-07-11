@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,6 +15,8 @@ import (
 	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 )
 
 type closeFunc func() error
@@ -72,47 +73,55 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 }
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
-	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level:       slog.LevelDebug,
+	var (
+		handlers []slog.Handler
+		closers  []closeFunc
+	)
+
+	// First initialize the console logger
+	handlers = append(handlers, tint.NewHandler(os.Stderr, &tint.Options{
+		Level: slog.LevelDebug,
 		ReplaceAttr: replaceAttr,
-	})
+		NoColor:     !(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())),
+	}))
 
 	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0x666)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 		}
-		bufferedFile := bufio.NewWriterSize(file, 8192)
-		multiWriter := io.MultiWriter(os.Stderr, bufferedFile)
-		closer := func() error {
+		bufferedFile := bufio.NewWriter(file)
+		handlers = append(handlers, slog.NewJSONHandler(bufferedFile, &slog.HandlerOptions{
+			ReplaceAttr: replaceAttr,
+		}))
+		closers = append(closers, func() error {
 			if err := bufferedFile.Flush(); err != nil {
-				fmt.Printf("failed to flush buffered file: %v\n", err)
-				return err
+				return fmt.Errorf("failed to flush log file: %w", err)
+			}
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("failed to close log file: %w", err)
 			}
 			return nil
-		}
-		infoHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: replaceAttr,
 		})
-		logger := slog.New(slog.NewMultiHandler(
-			debugHandler,
-			infoHandler,
-		))
-		env := os.Getenv("ENV")
-		hostname, _ := os.Hostname()
-		logger = logger.With(
-			slog.String("git_sha", build.GitSHA),
-			slog.String("build_time", build.BuildTime),
-			slog.String("env", env),
-			slog.String("hostname", hostname),
-		)
-
-		return logger, closer, nil
 	}
-	return slog.New(debugHandler), func() error {
-		return nil
-	}, nil
+	logger := slog.New(slog.NewMultiHandler(handlers...))
+	env := os.Getenv("ENV")
+	hostname, _ := os.Hostname()
+	logger = logger.With(
+		slog.String("git_sha", build.GitSHA),
+		slog.String("build_time", build.BuildTime),
+		slog.String("env", env),
+		slog.String("hostname", hostname),
+	)
+	closeFn := func() error {
+		var errs []error
+		for _, closer := range closers {
+			errs = append(errs, closer())
+		}
+		return errors.Join(errs...)
+	}
+
+	return logger, closeFn, nil
 }
 
 func replaceAttr(groups []string, a slog.Attr) slog.Attr {

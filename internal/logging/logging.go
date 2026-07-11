@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"crypto/rand"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,7 +17,7 @@ const LogContextKey contextKey = "log_context"
 
 type LogContext struct {
 	Username string
-	Error error
+	Error    error
 }
 
 type spyReadCloser struct {
@@ -53,6 +54,10 @@ func (w *spyResponseWriter) WriteHeader(statusCode int) {
 func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			xRequestID := r.Header.Get("X-Request-Id")
+			if xRequestID == "" {
+				xRequestID = rand.Text()
+			}
 			logCtx := &LogContext{}
 			ctx := context.WithValue(r.Context(), LogContextKey, logCtx)
 			r = r.WithContext(ctx)
@@ -63,6 +68,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			r.Body = spyRead
 			spyRW := &spyResponseWriter{ResponseWriter: w}
 			start := time.Now()
+			spyRW.Header().Set("X-Request-Id", xRequestID)
 			next.ServeHTTP(spyRW, r)
 
 			var attributes []slog.Attr
@@ -73,6 +79,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("response_body_bytes", spyRW.bytesWritten),
 				slog.Int("response_status", spyRW.statusCode),
 				slog.Int("request_body_bytes", spyRead.bytesRead),
+				slog.String("request_id", xRequestID),
 			)
 			if logCtx.Username != "" {
 				attributes = append(attributes, slog.String("user", logCtx.Username))
@@ -88,7 +95,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-func HttpError( w http.ResponseWriter, err error, status int, ctx context.Context,) {
+func HttpError(w http.ResponseWriter, err error, status int, ctx context.Context) {
 	if logCtx, ok := ctx.Value(LogContextKey).(*LogContext); ok {
 		logCtx.Error = err
 	}
