@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
 )
 
@@ -35,7 +36,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	}
 	st, err := store.New(dataDir, standardLogger)
 	if err != nil {
-		standardLogger.Info(fmt.Sprintf("failed to create store: %v\n", err))
+		standardLogger.Error(fmt.Sprintf("failed to create store: %v\n", err))
 		return 1
 	}
 	s := newServer(*st, httpPort, cancel, standardLogger)
@@ -56,17 +57,22 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	defer cancel()
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		standardLogger.Info(fmt.Sprintf("failed to shutdown server: %v\n", err))
+		standardLogger.Error(fmt.Sprintf("failed to shutdown server: %v\n", err))
 		return 1
 	}
 	if serverErr != nil {
-		standardLogger.Info(fmt.Sprintf("server error: %v\n", serverErr))
+		standardLogger.Error(fmt.Sprintf("server error: %v\n", serverErr))
 		return 1
 	}
 	return 0
 }
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
+	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level:       slog.LevelDebug,
+		ReplaceAttr: ReplaceAttr,
+	})
+
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
@@ -81,11 +87,34 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 			}
 			return nil
 		}
-		return slog.New(slog.NewTextHandler(multiWriter, nil)), closer, nil
+		infoHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
+			Level:       slog.LevelInfo,
+			ReplaceAttr: ReplaceAttr,
+		})
+		logger := slog.New(slog.NewMultiHandler(
+			debugHandler,
+			infoHandler,
+		))
+		return logger, closer, nil
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() error {
+	return slog.New(debugHandler), func() error {
 		return nil
 	}, nil
+}
+
+func ReplaceAttr(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == "error" {
+		err, ok := a.Value.Any().(error)
+		if !ok {
+			return a
+		}
+		attributes := []slog.Attr{
+			slog.String("message", err.Error()),
+		}
+		attributes = append(attributes, linkoerr.Attrs(err)...)
+		return slog.GroupAttrs("error", attributes...)
+	}
+	return a
 }
 
 type closeFunc func() error
