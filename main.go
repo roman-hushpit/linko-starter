@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,7 +15,20 @@ import (
 
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	pkgerr "github.com/pkg/errors"
 )
+
+type closeFunc func() error
+
+type stackTracer interface {
+	error
+	StackTrace() pkgerr.StackTrace
+}
+
+type multiError interface {
+	error
+	Unwrap() []error
+}
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -70,7 +84,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level:       slog.LevelDebug,
-		ReplaceAttr: ReplaceAttr,
+		ReplaceAttr: replaceAttr,
 	})
 
 	if logFile != "" {
@@ -89,7 +103,7 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 		}
 		infoHandler := slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
 			Level:       slog.LevelInfo,
-			ReplaceAttr: ReplaceAttr,
+			ReplaceAttr: replaceAttr,
 		})
 		logger := slog.New(slog.NewMultiHandler(
 			debugHandler,
@@ -102,19 +116,34 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc, error) {
 	}, nil
 }
 
-func ReplaceAttr(groups []string, a slog.Attr) slog.Attr {
+func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 	if a.Key == "error" {
 		err, ok := a.Value.Any().(error)
 		if !ok {
 			return a
 		}
-		attributes := []slog.Attr{
-			slog.String("message", err.Error()),
+		if multiErr, ok := errors.AsType[multiError](err); ok {
+			var errAttrs []slog.Attr
+			for i, e := range multiErr.Unwrap() {
+				errAttrs = append(errAttrs, slog.GroupAttrs(fmt.Sprintf("error_%d", i+1), errorAttrs(e)...))
+			}
+			return slog.GroupAttrs("errors", errAttrs...)
 		}
-		attributes = append(attributes, linkoerr.Attrs(err)...)
-		return slog.GroupAttrs("error", attributes...)
+		return slog.GroupAttrs("error", errorAttrs(err)...)
 	}
 	return a
 }
 
-type closeFunc func() error
+func errorAttrs(err error) []slog.Attr {
+	attrs := []slog.Attr{
+		{Key: "message", Value: slog.StringValue(err.Error())},
+	}
+	attrs = append(attrs, linkoerr.Attrs(err)...)
+	if stackErr, ok := errors.AsType[stackTracer](err); ok {
+		attrs = append(attrs, slog.Attr{
+			Key:   "stack_trace",
+			Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
+		})
+	}
+	return attrs
+}
