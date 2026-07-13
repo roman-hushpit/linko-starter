@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"boot.dev/linko/internal/logging"
+	"boot.dev/linko/internal/metrics"
 	"boot.dev/linko/internal/store"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -26,7 +27,7 @@ func newServer(store store.Store, port int, cancel context.CancelFunc, logger *s
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: logging.RequestLogger(logger)(mux),
+		Handler: metrics.MetricsMiddleware(logging.RequestLogger(logger)(mux)),
 	}
 
 	s := &server{
