@@ -63,8 +63,7 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 		logging.HttpError(w, pkgerr.WithStack(errors.New("failed to shorten URL")), http.StatusInternalServerError, r.Context())
 		return
 	}
-	s.logger.Info(fmt.Sprintf("Generated short code: %s for URL: %s\n", shortCode, longURL))
-	s.logger.Info("Successfully generated short code", slog.String("shortCode", shortCode), slog.String("longURL", longURL))
+	s.logger.Info("Successfully generated short code", slog.String("shortCode", shortCode), slog.String("long_url", obfuscateUrl(longURL)))
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	io.WriteString(w, shortCode)
@@ -121,4 +120,15 @@ func (s *server) handlerStats(w http.ResponseWriter, _ *http.Request) {
 		"redirects":   len(snapshot),
 		"bytes_saved": bytesSaved,
 	})
+}
+
+func obfuscateUrl(requestUrl string) string {
+	parsedUrl, err := url.Parse(requestUrl)
+	if err != nil {
+		return requestUrl
+	}
+	if _, b := parsedUrl.User.Password(); b {
+		parsedUrl.User = url.UserPassword(parsedUrl.User.Username(), "REDACTED")
+	}
+	return parsedUrl.String()
 }

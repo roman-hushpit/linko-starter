@@ -3,8 +3,11 @@ package logging
 import (
 	"context"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -74,7 +77,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			var attributes []slog.Attr
 			attributes = append(attributes, slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
-				slog.String("client_ip", r.RemoteAddr),
+				slog.String("client_ip", redactIP(r.RemoteAddr)),
 				slog.Duration("duration", time.Since(start)),
 				slog.Int("response_body_bytes", spyRW.bytesWritten),
 				slog.Int("response_status", spyRW.statusCode),
@@ -99,5 +102,26 @@ func HttpError(w http.ResponseWriter, err error, status int, ctx context.Context
 	if logCtx, ok := ctx.Value(LogContextKey).(*LogContext); ok {
 		logCtx.Error = err
 	}
-	http.Error(w, err.Error(), status)
+	generalizedError := err
+	switch status {
+	case 401, 403, 500:
+		generalizedError = errors.New(http.StatusText(status))
+	}
+	http.Error(w, generalizedError.Error(), status)
+}
+
+func redactIP(client_ip string) string {
+	host, _, err := net.SplitHostPort(client_ip)
+	if err != nil {
+		return client_ip
+	}
+	ipAddress := net.ParseIP(host)
+	if ipAddress == nil {
+		return client_ip
+	}
+	to4Ip := ipAddress.To4()
+	if to4Ip == nil {
+		return client_ip
+	}
+	return fmt.Sprintf("%d.%d.%d.x", to4Ip[0], to4Ip[1], to4Ip[2])
 }
