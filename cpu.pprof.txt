@@ -1,0 +1,33 @@
+File: linko
+Build ID: 2cc330844fee807e0b5982120321c35f64838480
+Type: cpu
+Time: 2026-07-15 09:13:00 UTC
+Duration: 30s, Total samples = 9.81s (32.70%)
+Showing nodes accounting for 9.71s, 98.98% of 9.81s total
+Dropped 85 nodes (cum <= 0.05s)
+      flat  flat%   sum%        cum   cum%
+     9.44s 96.23% 96.23%      9.45s 96.33%  golang.org/x/crypto/blowfish.encryptBlock
+     0.17s  1.73% 97.96%      9.61s 97.96%  golang.org/x/crypto/blowfish.ExpandKey
+     0.09s  0.92% 98.88%      0.09s  0.92%  internal/runtime/syscall/linux.Syscall6
+     0.01s   0.1% 98.98%      9.62s 98.06%  golang.org/x/crypto/bcrypt.expensiveBlowfishSetup
+         0     0% 98.98%      0.07s  0.71%  bufio.(*Writer).Flush
+         0     0% 98.98%      9.63s 98.17%  golang.org/x/crypto/bcrypt.GenerateFromPassword
+         0     0% 98.98%      9.63s 98.17%  golang.org/x/crypto/bcrypt.bcrypt
+         0     0% 98.98%      9.63s 98.17%  golang.org/x/crypto/bcrypt.newFromPassword
+         0     0% 98.98%      0.07s  0.71%  internal/poll.(*FD).Write
+         0     0% 98.98%      0.08s  0.82%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 98.98%      9.66s 98.47%  main.(*server).handlerRedirect
+         0     0% 98.98%      9.69s 98.78%  main.newServer.MetricsMiddleware.func3
+         0     0% 98.98%      9.69s 98.78%  main.newServer.newServer.RequestLogger.func1.func2
+         0     0% 98.98%      0.07s  0.71%  net.(*conn).Write
+         0     0% 98.98%      0.07s  0.71%  net.(*netFD).Write
+         0     0% 98.98%      9.67s 98.57%  net/http.(*ServeMux).ServeHTTP
+         0     0% 98.98%      9.70s 98.88%  net/http.(*conn).serve
+         0     0% 98.98%      0.07s  0.71%  net/http.(*persistConn).writeLoop
+         0     0% 98.98%      9.69s 98.78%  net/http.HandlerFunc.ServeHTTP
+         0     0% 98.98%      0.05s  0.51%  net/http.persistConnWriter.Write
+         0     0% 98.98%      9.69s 98.78%  net/http.serverHandler.ServeHTTP
+         0     0% 98.98%      0.09s  0.92%  syscall.RawSyscall6
+         0     0% 98.98%      0.08s  0.82%  syscall.Syscall
+         0     0% 98.98%      0.07s  0.71%  syscall.Write (inline)
+         0     0% 98.98%      0.07s  0.71%  syscall.write

@@ -9,13 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 
 	"boot.dev/linko/internal/logging"
 	"boot.dev/linko/internal/store"
 	pkgerr "github.com/pkg/errors"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const shortURLLen = len("http://localhost:8080/") + 6
@@ -80,14 +78,13 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	_, _ = bcrypt.GenerateFromPassword([]byte(longURL), bcrypt.DefaultCost)
 	if err := checkDestination(longURL); err != nil {
 		logging.HttpError(w, pkgerr.WithStack(errors.New("destination unavailable")), http.StatusBadGateway, r.Context())
 		return
 	}
 
 	redirectsMu.Lock()
-	redirects = append(redirects, strings.Repeat(longURL, 1024))
+	redirects = append(redirects, longURL)
 	redirectsMu.Unlock()
 
 	http.Redirect(w, r, longURL, http.StatusFound)
