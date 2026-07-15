@@ -15,6 +15,7 @@ import (
 	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	"boot.dev/linko/internal/tracing"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -37,6 +38,11 @@ func main() {
 }
 
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
+	tracerClose, err := tracing.InitTracing(ctx)
+	if err != nil {
+		return 1
+	}
+
 	standardLogger, closeFunc, err := initializeLogger(os.Getenv("LINKO_LOG_FILE"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
@@ -61,9 +67,16 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 			return
 		}
 	}()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
+	defer func() {
+		err := tracerClose(shutdownCtx)
+		if err != nil {
+			fmt.Printf("Failed to close tracer: %v\n", err)
+			return
+		}
+	}()
 	if err := s.shutdown(shutdownCtx); err != nil {
 		standardLogger.Error(fmt.Sprintf("failed to shutdown server: %v\n", err))
 		return 1

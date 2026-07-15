@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"boot.dev/linko/internal/logging"
+	"boot.dev/linko/internal/tracing"
 	pkgerr "github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -35,7 +36,7 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 			logging.HttpError(w, pkgerr.WithStack(errors.New("unauthorized")), http.StatusUnauthorized, r.Context())
 			return
 		}
-		ok, err := s.validatePassword(password, stored)
+		ok, err := s.validatePassword(password, stored, r.Context())
 		if err != nil {
 			logging.HttpError(w, pkgerr.WithStack(errors.New("internal server error")), http.StatusInternalServerError, r.Context())
 			return
@@ -52,7 +53,9 @@ func (s *server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *server) validatePassword(password, stored string) (bool, error) {
+func (s *server) validatePassword(password, stored string, ctx context.Context) (bool, error) {
+	_, span := tracing.Tracer.Start(ctx, "auth.validate_password")
+	defer span.End()
 	err := bcrypt.CompareHashAndPassword([]byte(stored), []byte(password))
 	if err == bcrypt.ErrMismatchedHashAndPassword {
 		return false, nil

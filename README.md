@@ -28,6 +28,12 @@ curl -u frodo:ofTheNineFingers "http://localhost:8899/debug/pprof/heap?seconds=3
 go tool pprof -dot linko memory.prof | dot -Tsvg -o memory.svg
 ```
 
+Goroutine Profiling
+```shell
+go tool pprof /path/to/linko goroutine.prof\
+
+go tool pprof -http=:0 /path/to/linko goroutine.prof
+```
 ### What to Log
 
 - Runtime environment name (e.g. production, staging, development)

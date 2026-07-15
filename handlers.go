@@ -13,6 +13,7 @@ import (
 
 	"boot.dev/linko/internal/logging"
 	"boot.dev/linko/internal/store"
+	"boot.dev/linko/internal/tracing"
 	pkgerr "github.com/pkg/errors"
 )
 
@@ -27,38 +28,44 @@ var (
 var indexPage string
 
 func (s *server) handlerIndex(w http.ResponseWriter, r *http.Request) {
+	_, span := tracing.Tracer.Start(r.Context(), "handler.index")
+	defer span.End()
 	w.Header().Set("Content-Type", "text/html")
 	io.WriteString(w, indexPage)
 }
 
 func (s *server) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	_, span := tracing.Tracer.Start(r.Context(), "handler.login")
+	defer span.End()
 	w.WriteHeader(http.StatusOK)
 }
 
 func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
-	user, ok := r.Context().Value(UserContextKey).(string)
+	ctx, span := tracing.Tracer.Start(r.Context(), "handler.shorten_link")
+	defer span.End()
+	user, ok := ctx.Value(UserContextKey).(string)
 	if !ok || user == "" {
-		logging.HttpError(w, pkgerr.WithStack(errors.New("unauthorized")), http.StatusUnauthorized, r.Context())
+		logging.HttpError(w, pkgerr.WithStack(errors.New("unauthorized")), http.StatusUnauthorized, ctx)
 		return
 	}
 	longURL := r.FormValue("url")
 	if longURL == "" {
-		logging.HttpError(w, pkgerr.WithStack(errors.New("missing url parameter")), http.StatusBadRequest, r.Context())
+		logging.HttpError(w, pkgerr.WithStack(errors.New("missing url parameter")), http.StatusBadRequest, ctx)
 		return
 	}
 	u, err := url.Parse(longURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		logging.HttpError(w, pkgerr.WithStack(errors.New("invalid URL: must include scheme (http/https) and host")),
-			http.StatusBadRequest, r.Context())
+			http.StatusBadRequest, ctx)
 		return
 	}
-	if err := checkDestination(longURL); err != nil {
-		logging.HttpError(w, pkgerr.WithStack(errors.New(fmt.Sprintf("invalid target URL: %v", err))), http.StatusBadRequest, r.Context())
+	if err := checkDestination(longURL, ctx); err != nil {
+		logging.HttpError(w, pkgerr.WithStack(errors.New(fmt.Sprintf("invalid target URL: %v", err))), http.StatusBadRequest, ctx)
 		return
 	}
-	shortCode, err := s.store.Create(r.Context(), longURL)
+	shortCode, err := s.store.Create(ctx, longURL)
 	if err != nil {
-		logging.HttpError(w, pkgerr.WithStack(errors.New("failed to shorten URL")), http.StatusInternalServerError, r.Context())
+		logging.HttpError(w, pkgerr.WithStack(errors.New("failed to shorten URL")), http.StatusInternalServerError, ctx)
 		return
 	}
 	s.logger.Info("Successfully generated short code", slog.String("shortCode", shortCode), slog.String("long_url", obfuscateUrl(longURL)))
@@ -68,18 +75,20 @@ func (s *server) handlerShortenLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
-	longURL, err := s.store.Lookup(r.Context(), r.PathValue("shortCode"))
+	ctx, span := tracing.Tracer.Start(r.Context(), "handler.redirect")
+	defer span.End()
+	longURL, err := s.store.Lookup(ctx, r.PathValue("shortCode"))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			logging.HttpError(w, pkgerr.WithStack(errors.New("not found")), http.StatusNotFound, r.Context())
+			logging.HttpError(w, pkgerr.WithStack(errors.New("not found")), http.StatusNotFound, ctx)
 		} else {
 			s.logger.Error("failed to lookup URL", "error", err)
-			logging.HttpError(w, pkgerr.WithStack(errors.New("internal server error")), http.StatusInternalServerError, r.Context())
+			logging.HttpError(w, pkgerr.WithStack(errors.New("internal server error")), http.StatusInternalServerError, ctx)
 		}
 		return
 	}
-	if err := checkDestination(longURL); err != nil {
-		logging.HttpError(w, pkgerr.WithStack(errors.New("destination unavailable")), http.StatusBadGateway, r.Context())
+	if err := checkDestination(longURL, ctx); err != nil {
+		logging.HttpError(w, pkgerr.WithStack(errors.New("destination unavailable")), http.StatusBadGateway, ctx)
 		return
 	}
 
@@ -91,10 +100,12 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handlerListURLs(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.Tracer.Start(r.Context(), "handler.list_urls")
+	defer span.End()
 	codes, err := s.store.List(r.Context())
 	if err != nil {
 		s.logger.Error("failed to list URLs", "error", err)
-		logging.HttpError(w, pkgerr.WithStack(errors.New("failed to list URLs")), http.StatusInternalServerError, r.Context())
+		logging.HttpError(w, pkgerr.WithStack(errors.New("failed to list URLs")), http.StatusInternalServerError, ctx)
 		return
 	}
 
@@ -102,7 +113,9 @@ func (s *server) handlerListURLs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(codes)
 }
 
-func (s *server) handlerStats(w http.ResponseWriter, _ *http.Request) {
+func (s *server) handlerStats(w http.ResponseWriter, r *http.Request) {
+	_, span := tracing.Tracer.Start(r.Context(), "handler.stats")
+	defer span.End()
 	redirectsMu.Lock()
 	snapshot := redirects
 	redirectsMu.Unlock()

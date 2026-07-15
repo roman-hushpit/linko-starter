@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
+
+	"boot.dev/linko/internal/tracing"
 )
 
-func checkDestination(targetURL string) error {
+func checkDestination(targetURL string, ctx context.Context) error {
+	_, span := tracing.Tracer.Start(ctx, "http.verify_destination")
+	defer span.End()
 	resp, err := http.DefaultClient.Get(targetURL)
 	if err != nil {
 		return fmt.Errorf("destination unreachable: %w", err)
