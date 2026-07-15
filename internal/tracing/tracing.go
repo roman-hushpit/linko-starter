@@ -1,6 +1,5 @@
 package tracing
 
-
 import (
 	"context"
 	"time"
